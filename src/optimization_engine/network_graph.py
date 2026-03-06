@@ -1,3 +1,5 @@
+"""Airport-flight network graph construction."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,7 +26,7 @@ def build_flight_network(
     Create a directed network of airports and flights.
 
     Nodes: airports (IATA-like codes)
-    Edges: individual flights with operational attributes.
+    Edges: individual flights with operational attributes (including distance_km for LP).
     """
     G = nx.DiGraph()
 
@@ -37,13 +39,8 @@ def build_flight_network(
         G.add_node(origin)
         G.add_node(dest)
 
-        # Approximate duration as distance / 800 km/h, converted to minutes.
         duration_min = (row["distance_km"] / 800.0) * 60.0
-
-        # Simple turnaround time model: heavier loads and congestion need more time.
         turnaround_min = 30.0 + 40.0 * float(row["airport_load"])
-
-        # Approximate passenger connections as a function of congestion and load.
         passenger_connections = int(50 + 150 * float(row["congestion_level"]))
 
         edge_data: Dict[str, object] = {
@@ -56,6 +53,7 @@ def build_flight_network(
             "sched_dep_minute_of_day": int(row["sched_dep_minute_of_day"]),
             "congestion_level": float(row["congestion_level"]),
             "airport_load": float(row["airport_load"]),
+            "distance_km": float(row["distance_km"]),
         }
 
         G.add_edge(origin, dest, **edge_data)
@@ -79,7 +77,3 @@ def get_aircraft_flight_sequence(G: nx.DiGraph) -> Dict[str, List[str]]:
         flights_sorted = sorted(flights, key=lambda x: x[0])
         aircraft_sequences[ac_id] = [f[1] for f in flights_sorted]
     return aircraft_sequences
-
-
-__all__ = ["build_flight_network", "get_aircraft_flight_sequence", "FlightEdgeData"]
-

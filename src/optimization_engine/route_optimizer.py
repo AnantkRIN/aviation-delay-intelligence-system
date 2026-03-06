@@ -1,3 +1,5 @@
+"""Dijkstra routing and Kruskal MST connectivity."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -23,7 +25,6 @@ def compute_least_delay_route(G: nx.DiGraph, origin: str, destination: str) -> R
     """
     Use Dijkstra's algorithm to compute the least-delay path between two airports.
     """
-
     def weight(u: str, v: str, data: dict) -> float:
         duration = float(data["duration_min"])
         delay = float(data.get("propagated_delay_min", data.get("predicted_delay_min", 0.0)))
@@ -53,7 +54,6 @@ def compute_minimum_spanning_connectivity(G: nx.DiGraph) -> ConnectivityOptimiza
     for u, v, data in G.edges(data=True):
         w = _edge_weight(G, u, v)
         if undirected.has_edge(u, v):
-            # Keep the lightest edge between airports.
             if w < undirected[u][v]["weight"]:
                 undirected[u][v]["weight"] = w
         else:
@@ -63,7 +63,3 @@ def compute_minimum_spanning_connectivity(G: nx.DiGraph) -> ConnectivityOptimiza
     total_weight = sum(d["weight"] for _, _, d in mst.edges(data=True))
     mst_edges = [(u, v) for u, v in mst.edges()]
     return ConnectivityOptimizationResult(mst_edges=mst_edges, total_weight=total_weight)
-
-
-__all__ = ["RouteResult", "ConnectivityOptimizationResult", "compute_least_delay_route", "compute_minimum_spanning_connectivity"]
-

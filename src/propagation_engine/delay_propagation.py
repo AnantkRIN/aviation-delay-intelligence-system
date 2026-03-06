@@ -1,10 +1,14 @@
+"""Cascading delay propagation across the network."""
+
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import networkx as nx
+
+from .aircraft_rotation import apply_aircraft_rotation_propagation
 
 
 @dataclass
@@ -14,6 +18,8 @@ class PropagationConfig:
     max_iterations: int = 5
     tolerance: float = 1e-2
     passenger_window_min: float = 180.0
+    turnaround_buffer_min: float = 30.0  # aircraft rotation buffer
+    use_aircraft_rotation: bool = True  # apply rotation propagation rule
 
 
 @dataclass
@@ -28,16 +34,27 @@ def _edge_key(u: str, v: str, data: Dict) -> str:
     return data.get("flight_id", f"{u}->{v}")
 
 
-def initialize_propagated_delay(G: nx.DiGraph, shock_airport: str, shock_minutes: float):
+def initialize_propagated_delay(
+    G: nx.DiGraph,
+    shock_airport: str,
+    shock_minutes: float,
+    additional_shocks: Optional[Dict[str, float]] = None,
+):
     """
-    Initialise propagated delay on edges based on model predictions and an exogenous shock.
+    Initialise propagated delay on edges based on model predictions and exogenous shocks.
 
-    All flights departing from the shock_airport receive an additional delay.
+    All flights departing from shock_airport receive shock_minutes.
+    additional_shocks: {airport: delay_minutes} for multiple disruption points.
     """
+    shocks = {shock_airport: shock_minutes}
+    if additional_shocks:
+        shocks.update(additional_shocks)
     for u, v, data in G.edges(data=True):
         base = float(data.get("predicted_delay_min", 0.0))
-        if u == shock_airport:
-            base += shock_minutes
+        for apt, delay in shocks.items():
+            if u == apt:
+                base += delay
+                break
         data["propagated_delay_min"] = base
 
 
@@ -55,12 +72,10 @@ def propagate_delays(G: nx.DiGraph, config: PropagationConfig) -> PropagationSum
     """
     Perform iterative cascading delay propagation across the network until stable.
 
-    The propagation model is:
-        Delay_j += Delay_i * alpha * exp(-Δt / beta)
+    Includes aircraft rotation propagation:
+        delay_next_flight = max(delay_previous_flight - turnaround_time, 0)
 
-    where Δt is the connection time gap either through:
-        - same-aircraft continuation, or
-        - passenger connections at the same airport.
+    Plus exponential decay model for passenger connections and aircraft continuity.
     """
     # Baseline total delay using initial propagated delays.
     total_before = sum(
@@ -74,6 +89,10 @@ def propagate_delays(G: nx.DiGraph, config: PropagationConfig) -> PropagationSum
                 data.get("predicted_delay_min", 0.0)
             )
 
+    # Apply aircraft rotation propagation first (Phase 2)
+    if config.use_aircraft_rotation:
+        apply_aircraft_rotation_propagation(G, config.turnaround_buffer_min)
+
     # Precompute aircraft sequences (ordered by departure time).
     aircraft_to_edges: Dict[str, List[Tuple[str, str, Dict]]] = {}
     for u, v, data in G.edges(data=True):
@@ -83,6 +102,7 @@ def propagate_delays(G: nx.DiGraph, config: PropagationConfig) -> PropagationSum
     for ac, edges in aircraft_to_edges.items():
         edges.sort(key=lambda e: e[2]["sched_dep_minute_of_day"])
 
+    iteration = 1
     for iteration in range(1, config.max_iterations + 1):
         max_change = 0.0
 
@@ -98,14 +118,13 @@ def propagate_delays(G: nx.DiGraph, config: PropagationConfig) -> PropagationSum
             current = current_delays[key_j]
 
             dep_j = float(data["sched_dep_minute_of_day"])
-            duration_j = float(data["duration_min"])
             congestion = float(data.get("congestion_level", 0.5))
             airport_load = float(data.get("airport_load", 0.5))
 
             amplification = 1.0 + 0.5 * congestion + 0.5 * airport_load
             contribution = 0.0
 
-            # 1) Same-aircraft continuation.
+            # 1) Same-aircraft continuation (with rotation rule already applied)
             ac = data["aircraft_id"]
             for u_i, v_i, data_i in aircraft_to_edges[ac]:
                 key_i = _edge_key(u_i, v_i, data_i)
@@ -166,7 +185,3 @@ def propagate_delays(G: nx.DiGraph, config: PropagationConfig) -> PropagationSum
         total_delay_after=total_after,
         per_airport_delay=per_airport,
     )
-
-
-__all__ = ["PropagationConfig", "PropagationSummary", "initialize_propagated_delay", "propagate_delays"]
-

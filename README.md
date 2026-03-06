@@ -1,13 +1,20 @@
-## AI-Driven Flight Delay Propagation and Network Optimization System
+## AI Aviation Delay Propagation and Network Optimization System
 
-This repository contains a research-grade prototype of an airline Operations Control Centre (OCC) decision support system. It combines **machine learning**, **graph algorithms**, and **operations research** to understand, simulate, and optimize **flight delay propagation** across an aviation network.
+Industry-level aviation operations decision support system combining **machine learning**, **network science**, **operations research**, **simulation modeling**, **decision support**, and **interactive visualization**.
 
-- **Delay prediction:** RandomForest regression model using weather, congestion, historical delay, distance, and airport load.
-- **Network modelling:** Flights are represented as edges in a directed airport graph (NetworkX).
-- **Cascading propagation:** Multi-hop delay propagation model using exponential decay and congestion/connection multipliers.
-- **Optimization layer:** Dijkstra, Kruskal MST, and a linear programming model to reduce overall delay, fuel proxy, and passenger disruption.
-- **Simulation engine:** End-to-end scenario with a configurable “storm” at a major hub (e.g. Delhi).
-- **Visual dashboards:** Network delay graph, airport delay heatmap, and optimization impact comparison.
+### Features
+
+- **Delay prediction:** RandomForest regression with confidence intervals (25th–75th percentile)
+- **Weather risk integration:** Simulated `data/weather_risk.csv` with storm/wind risk; penalty = storm_probability × 20
+- **Aircraft rotation modeling:** Delay propagation via tail sequences (e.g. DEL→BOM→BLR→MAA) with turnaround buffer (default 30 min)
+- **Network modelling:** Airport–flight graph (NetworkX) with rich edge attributes
+- **Cascading propagation:** Multi-hop delay propagation with exponential decay
+- **Optimization:** Dijkstra routing, Kruskal MST, LP-based operate/cancel decisions
+- **Scenario simulation:** Compare multiple disruption scenarios (single/multi-shock, weather)
+- **Decision support:** Airport risk ranking, authority alerts, recommended actions
+- **Interactive dashboard:** Streamlit with network map, heatmaps, scenario comparison
+- **REST API:** FastAPI for programmatic simulation
+- **Structured logging:** `logs/simulation.log`
 
 ### Quick Start
 
@@ -16,49 +23,77 @@ pip install -r requirements.txt
 python -m src.main
 ```
 
-On first run, a synthetic yet realistic Indian domestic flight dataset is generated under `data/`. The system then:
+**Dashboard:**
+```bash
+python -m streamlit run dashboard/app.py
+```
+(Or `streamlit run dashboard/app.py` if streamlit is on PATH)
 
-1. Trains a delay prediction model.
-2. Builds the airport flight network.
-3. Injects a **90-minute storm delay at Delhi (DEL)**.
-4. Propagates delays across connecting flights and aircraft rotations.
-5. Optimizes passenger routing and network connectivity.
-6. Solves a linear program that decides which flights to operate vs. cancel/retime.
-7. Produces figures under `data/figures/`.
+**API:**
+```bash
+uvicorn api_layer.main:app --reload
+```
 
-### Console Outputs (High-Level)
+### Project Structure
 
-Running `python -m src.main` prints:
+```
+aviation-delay-intelligence-system/
+├── src/
+│   ├── data_layer/          # Flight data, weather risk
+│   ├── prediction_engine/   # ML delay model + confidence
+│   ├── propagation_engine/ # Delay propagation + aircraft rotation
+│   ├── optimization_engine/# Dijkstra, MST, LP
+│   ├── decision_engine/    # Alerts, risk ranking, recommendations
+│   ├── simulation_engine/  # Orchestration + scenario engine
+│   ├── visualization_engine/# Advanced plots
+│   ├── api_layer/          # (FastAPI at project root)
+│   └── utils/              # Logging
+├── api_layer/              # FastAPI app (uvicorn api_layer.main:app)
+├── dashboard/              # Streamlit app
+├── data/                   # sample_flights.csv, weather_risk.csv, figures/
+├── logs/                   # simulation.log
+└── research/
+```
 
-- **Predicted delay quality** – train/test MAE and \(R^2\).
-- **Network propagation summary** – total delay before vs. after, convergence iterations, reduction percentage.
-- **Passenger-centric route** – least-delay path between two airports using Dijkstra on propagated delays.
-- **Connectivity optimization** – MST weight as an effective connectivity baseline.
-- **LP control impact** – composite objective before/after and % reduction.
-- **Passenger impact analysis** – estimated disrupted connecting passengers from cancelled flights.
+### API Example
 
-### Repository Layout
+```bash
+POST /simulate_delay
+{
+  "origin": "DEL",
+  "destination": "BOM",
+  "delay": 90,
+  "passengers": 210
+}
 
-- `src/data_engine.py` – synthetic data generator and preprocessing utilities.
-- `src/delay_prediction_model.py` – RandomForest delay regressor.
-- `src/network_graph.py` – airport–flight graph construction with rich edge attributes.
-- `src/delay_propagation_engine.py` – exponential-decay cascading propagation model.
-- `src/route_optimizer.py` – Dijkstra and Kruskal-based network optimizers.
-- `src/linear_programming_engine.py` – PuLP-based schedule control model.
-- `src/simulation_engine.py` – orchestration of ML, graph, propagation, and optimization.
-- `src/visualization_engine.py` – visual analytics dashboards using matplotlib / seaborn.
-- `research/` – research-style documentation (methodology, models, and case study).
-- `architecture.md` – detailed software and data-flow architecture.
+Response:
+{
+  "affected_airports": ["DEL", "BOM", ...],
+  "flights_affected": 54,
+  "passenger_impact": 2258,
+  "recommended_actions": [...],
+  "total_network_delay": 23183.65,
+  "optimization_reduction_pct": 58.79
+}
+```
 
-### Real-World Relevance
+### Console Output (Operations Dashboard Style)
 
-This prototype is inspired by real airline OCC workflows:
+```
+====================================================
+  AI AVIATION OPERATIONS CONTROL SYSTEM
+====================================================
 
-- **Predictive control:** Estimating delay risk before departure.
-- **Network-aware reasoning:** Understanding how disruptions at a hub ripple through rotations and connections.
-- **Decision support:** Evaluating trade-offs between operating a late flight, cancelling it, or rerouting passengers.
+--- Delay Prediction Performance ---
+--- Network Delay Impact ---
+--- Passenger Disruption ---
+--- Optimized Passenger Route (Dijkstra) ---
+--- Airport Risk Ranking ---
+--- Optimization Effectiveness ---
+--- Recommended Actions ---
+====================================================
+```
 
-The design is suitable as a **final-year engineering project** at the level of an IIT/DRDO lab prototype and can be extended into publishable research.
+### Research Documentation
 
-For full mathematical details, algorithms, and a narrative case study, see the documents in the `research/` folder and `architecture.md`.
-
+See `research/` and `architecture.md` for methodology, mathematical models, and case studies.

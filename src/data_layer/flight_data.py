@@ -1,11 +1,14 @@
+"""Flight data loading and synthetic generation."""
+
+from __future__ import annotations
+
 import pathlib
 from typing import Tuple
 
 import numpy as np
 import pandas as pd
 
-
-PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[1]
+PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 
 
@@ -122,12 +125,3 @@ def get_feature_target_matrices(
     X = df[feature_cols].values
     y = df["actual_delay_min"].values
     return X, y
-
-
-__all__ = [
-    "DATA_DIR",
-    "load_or_create_dataset",
-    "train_test_split",
-    "get_feature_target_matrices",
-]
-

@@ -1,3 +1,5 @@
+"""LP-based network operations optimization."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -47,7 +49,6 @@ def optimize_network_operations(
 
     x = {fid: pulp.LpVariable(f"x_{fid}", lowBound=0, upBound=1, cat="Binary") for fid in flights}
 
-    # Objective: weighted combination of delay, fuel proxy, and passenger disruption.
     objective_terms = []
     for fid, attrs in flights.items():
         cost = (
@@ -58,12 +59,9 @@ def optimize_network_operations(
         objective_terms.append(cost * x[fid])
 
     prob += pulp.lpSum(objective_terms)
-
-    # Soft constraint: operate at least a fraction of flights to keep connectivity.
     min_operated_fraction = 0.6
     prob += pulp.lpSum(x.values()) >= min_operated_fraction * len(x)
 
-    # Solve.
     prob.solve(pulp.PULP_CBC_CMD(msg=False))
 
     operated, cancelled = [], []
@@ -73,7 +71,6 @@ def optimize_network_operations(
         else:
             cancelled.append(fid)
 
-    # Objective "before" if all flights are operated.
     objective_before = 0.0
     for fid, attrs in flights.items():
         cost = (
@@ -91,7 +88,3 @@ def optimize_network_operations(
         operated_flights=operated,
         cancelled_flights=cancelled,
     )
-
-
-__all__ = ["LinearProgrammingResult", "optimize_network_operations"]
-
