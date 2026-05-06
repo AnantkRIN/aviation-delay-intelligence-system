@@ -1,6 +1,7 @@
-"""Advanced visualization: network, heatmaps, comparisons, scenarios."""
+﻿"""Advanced visualization: network, heatmaps, comparisons, scenarios."""
 
 from .plots import (
+    clear_figure_outputs,
     plot_network_delays,
     plot_delay_heatmap,
     plot_optimization_comparison,
@@ -12,6 +13,7 @@ from .plots import (
 )
 
 __all__ = [
+    "clear_figure_outputs",
     "plot_network_delays",
     "plot_delay_heatmap",
     "plot_optimization_comparison",

@@ -1,143 +1,202 @@
-"""Streamlit dashboard for AI Aviation Operations Control System."""
+"""
+AI Aviation Disruption Control Simulator.
+
+Live dashboard renders figures in browser only (no disk save).
+Run with: python -m streamlit run dashboard/app.py
+"""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-import plotly.graph_objects as go
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 import networkx as nx
+import numpy as np
+import streamlit as st
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.simulation_engine.orchestrator import run_end_to_end_simulation
-from src.simulation_engine.scenario_engine import run_multi_scenario_comparison
-from src.data_layer import load_weather_risk, get_weather_risk_by_airport
-
-st.set_page_config(
-    page_title="AI Aviation Operations Control",
-    page_icon="✈️",
-    layout="wide",
+from src.services.simulation_service import (
+    AVG_PASSENGERS_PER_FLIGHT,
+    CONNECTION_RATIO,
+    SingleDisruptionResult,
+    simulate_single_flight_disruption,
 )
 
-st.title("✈️ AI Aviation Operations Control System")
-st.markdown("Industry-level aviation delay propagation and network optimization prototype")
+AIRPORTS = ["DEL", "BOM", "BLR", "MAA", "HYD", "CCU", "AMD", "GOI"]
 
-# Sidebar inputs
-st.sidebar.header("Live Disruption Simulator")
-origin = st.sidebar.selectbox("Origin Airport", ["DEL", "BOM", "BLR", "MAA", "HYD", "CCU", "AMD", "GOI"])
-destination = st.sidebar.selectbox("Destination Airport", ["DEL", "BOM", "BLR", "MAA", "HYD", "CCU", "AMD", "GOI"])
-delay_min = st.sidebar.slider("Delay (minutes)", 0, 180, 90)
-passengers = st.sidebar.number_input("Passengers", min_value=1, max_value=500, value=210)
-run_sim = st.sidebar.button("Run Simulation")
 
-# Run simulation
-if run_sim:
-    with st.spinner("Running simulation..."):
-        outputs = run_end_to_end_simulation(
-            shock_airport=origin,
-            shock_delay_min=float(delay_min),
+def build_live_network_figure(result: SingleDisruptionResult):
+    """Build a live network figure for browser display only."""
+    G = result.network
+    origin = result.origin
+    affected_set = set(result.affected_airports)
+
+    pos = nx.spring_layout(G, seed=42)
+    node_colors = []
+    for n in G.nodes():
+        if n == origin:
+            node_colors.append("#ff9900")  # orange
+        elif n in affected_set:
+            node_colors.append("#e74c3c")  # red
+        else:
+            node_colors.append("#3498db")  # blue
+
+    fig, ax = plt.subplots(figsize=(10, 8))
+    nx.draw_networkx_nodes(G, pos, node_color=node_colors, node_size=800, ax=ax)
+    nx.draw_networkx_labels(G, pos, font_size=10, font_weight="bold", ax=ax)
+    nx.draw_networkx_edges(G, pos, edge_color="#888", arrows=True, ax=ax)
+    ax.set_title("Live Network Map — Origin (orange) | Affected (red) | Normal (blue)")
+    ax.axis("off")
+    fig.tight_layout()
+    return fig
+
+
+def build_airport_delay_bar(result: SingleDisruptionResult):
+    """Bar chart of propagated delay by airport."""
+    items = sorted(result.per_airport_delay.items(), key=lambda x: x[1], reverse=True)
+    airports = [k for k, _ in items]
+    delays = [v for _, v in items]
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.bar(airports, delays, color="#e74c3c")
+    ax.set_title("Airport Delay Distribution")
+    ax.set_xlabel("Airport")
+    ax.set_ylabel("Propagated Delay (min)")
+    fig.tight_layout()
+    return fig
+
+
+def build_top_routes_delay_chart(result: SingleDisruptionResult):
+    """Horizontal bar chart of top delayed routes."""
+    route_delays = []
+    for u, v, data in result.network.edges(data=True):
+        d = float(data.get("propagated_delay_min", 0.0))
+        if d > 0:
+            route_delays.append((f"{u}->{v}", d))
+    route_delays.sort(key=lambda x: x[1], reverse=True)
+    top = route_delays[:10]
+    labels = [r[0] for r in top][::-1]
+    values = [r[1] for r in top][::-1]
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.barh(labels, values, color="#ff9900")
+    ax.set_title("Top 10 Most Delayed Routes")
+    ax.set_xlabel("Delay (min)")
+    fig.tight_layout()
+    return fig
+
+
+def build_passenger_impact_breakdown(passengers: int, affected_flights: int):
+    """Stacked-like breakdown chart of passenger impact components."""
+    connecting = passengers * CONNECTION_RATIO
+    network_component = affected_flights * AVG_PASSENGERS_PER_FLIGHT
+    labels = ["Direct", "Connecting", "Network Ripple"]
+    values = [passengers, connecting, network_component]
+    colors = ["#3498db", "#9b59b6", "#e67e22"]
+    fig, ax = plt.subplots(figsize=(7, 4))
+    ax.bar(labels, values, color=colors)
+    ax.set_title("Passenger Impact Breakdown")
+    ax.set_ylabel("Passengers")
+    fig.tight_layout()
+    return fig
+
+
+def build_recommendation_priority_chart(recommendations: list[str]):
+    """Simple priority score visualization for recommended actions."""
+    if not recommendations:
+        recommendations = ["No action needed"]
+    scores = np.linspace(len(recommendations), 1, len(recommendations))
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.barh([f"Action {i+1}" for i in range(len(recommendations))], scores, color="#2ecc71")
+    ax.set_title("Recommendation Priority View")
+    ax.set_xlabel("Priority Score")
+    fig.tight_layout()
+    return fig
+
+
+st.set_page_config(page_title="AI Aviation Disruption Control Simulator", page_icon="✈️", layout="wide")
+st.title("AI Aviation Disruption Control Simulator")
+st.markdown("Real-time single flight disruption simulation using shared backend logic.")
+
+st.subheader("Flight Input")
+col1, col2, col3, col4, col5 = st.columns(5)
+with col1:
+    origin = st.selectbox("Origin Airport", AIRPORTS, index=0)
+with col2:
+    destination = st.selectbox("Destination Airport", AIRPORTS, index=1)
+with col3:
+    delay_minutes = st.number_input("Delay Time (minutes)", min_value=0, max_value=300, value=90)
+with col4:
+    passengers = st.number_input("Passengers on Flight", min_value=1, max_value=500, value=210)
+with col5:
+    weather_risk = st.slider("Weather Risk Probability (0–1)", 0.0, 1.0, 0.6, step=0.1)
+
+run_clicked = st.button("Simulate Disruption")
+
+if run_clicked:
+    with st.spinner("Running disruption simulation..."):
+        result = simulate_single_flight_disruption(
+            origin=origin,
+            destination=destination,
+            delay_minutes=float(delay_minutes),
+            passengers=passengers,
+            weather_risk=weather_risk,
         )
 
-    st.success("Simulation complete!")
+    st.success("Simulation complete.")
 
-    # 1. Aviation network map
-    st.subheader("1. Aviation Network Map")
-    G = outputs.network
-    pos = nx.spring_layout(G, seed=42)
-    edge_trace = []
-    node_x, node_y = [], []
-    for node in G.nodes():
-        x, y = pos[node]
-        node_x.append(x)
-        node_y.append(y)
-    node_trace = go.Scatter(
-        x=node_x, y=node_y, mode="markers+text", text=list(G.nodes()),
-        textposition="top center", marker=dict(size=20, color="lightblue"),
-    )
-    edge_x, edge_y = [], []
-    for u, v in G.edges():
-        x0, y0 = pos[u]
-        x1, y1 = pos[v]
-        edge_x.extend([x0, x1, None])
-        edge_y.extend([y0, y1, None])
-    edge_trace = go.Scatter(x=edge_x, y=edge_y, line=dict(width=1, color="#888"), mode="lines")
-    fig = go.Figure(data=[edge_trace, node_trace])
-    fig.update_layout(title="Network Graph", showlegend=False, height=400)
-    st.plotly_chart(fig, use_container_width=True)
+    st.subheader("Flight Input Summary")
+    st.json({
+        "Origin Airport": result.origin,
+        "Destination Airport": result.destination,
+        "Delay (minutes)": result.delay_minutes,
+        "Passengers": passengers,
+        "Weather Risk": result.weather_risk,
+        "Initial Delay (delay + weather_delay)": round(result.initial_delay, 1),
+    })
 
-    # 2. Delay heatmap
-    st.subheader("2. Delay Heatmap")
-    per_airport = {}
-    for u, v, data in outputs.network.edges(data=True):
-        per_airport.setdefault(u, 0.0)
-        per_airport[u] += float(data.get("propagated_delay_min", 0.0))
-    df_heat = pd.DataFrame({"Airport": list(per_airport.keys()), "Delay (min)": list(per_airport.values())})
-    fig2 = px.bar(df_heat, x="Airport", y="Delay (min)", color="Delay (min)", color_continuous_scale="Reds")
-    st.plotly_chart(fig2, use_container_width=True)
+    st.subheader("Network Impact")
+    st.metric("Affected Airports", len(result.affected_airports))
+    st.write("**Affected airports:** " + ", ".join(result.affected_airports) if result.affected_airports else "None")
+    st.metric("Affected Flights (routes)", result.affected_flights)
 
-    # 3. Airport risk ranking
-    st.subheader("3. Airport Risk Ranking")
-    risk_df = pd.DataFrame(
-        outputs.airport_risk_ranking,
-        columns=["Airport", "Risk Score"],
-    )
-    fig3 = px.bar(risk_df, x="Airport", y="Risk Score", color="Risk Score", color_continuous_scale="Oranges")
-    st.plotly_chart(fig3, use_container_width=True)
+    st.subheader("Passenger Impact")
+    connecting = passengers * CONNECTION_RATIO
+    st.caption(f"Connecting passengers (passengers x {CONNECTION_RATIO}) = {connecting:.0f}")
+    st.caption(f"Affected flights x {AVG_PASSENGERS_PER_FLIGHT} avg = {result.affected_flights * AVG_PASSENGERS_PER_FLIGHT:.0f}")
+    st.metric("Total Passengers Affected", f"{result.total_passengers_affected:.0f}")
 
-    # 4. Passenger impact
-    st.subheader("4. Passenger Impact")
-    impact = outputs.delay_metrics.get("cancelled_passenger_connections", 0) + passengers
-    st.metric("Passengers Affected", f"{impact:.0f}")
+    st.subheader("Operational Recommendations")
+    for action in result.recommended_actions:
+        st.write(f"- {action}")
 
-    # 5. System effectiveness
-    st.subheader("5. System Effectiveness Comparison")
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Delay Before", f"{outputs.delay_metrics['total_delay_before']:.0f} min")
-    with col2:
-        st.metric("Delay After", f"{outputs.delay_metrics['total_delay_after']:.0f} min")
-    with col3:
-        st.metric("LP Reduction", f"{outputs.delay_metrics['lp_reduction_pct']:.1f}%")
-    with col4:
-        st.metric("Propagation Iterations", outputs.delay_metrics["propagation_iterations"])
+    st.subheader("Live Network Map")
+    fig = build_live_network_figure(result)
+    st.pyplot(fig, use_container_width=True)
+    plt.close(fig)
+    st.caption("Rendered live in browser only (not saved to folder).")
 
-    # 6. Recommended actions
-    st.subheader("6. Recommended Actions")
-    for action in outputs.recommended_actions:
-        st.write(f"• {action}")
+    st.subheader("Airport Delay Chart")
+    fig_delay = build_airport_delay_bar(result)
+    st.pyplot(fig_delay, use_container_width=True)
+    plt.close(fig_delay)
 
+    st.subheader("Top Delayed Routes")
+    fig_routes = build_top_routes_delay_chart(result)
+    st.pyplot(fig_routes, use_container_width=True)
+    plt.close(fig_routes)
+
+    st.subheader("Passenger Impact Breakdown")
+    fig_pax = build_passenger_impact_breakdown(passengers, result.affected_flights)
+    st.pyplot(fig_pax, use_container_width=True)
+    plt.close(fig_pax)
+
+    st.subheader("Recommendation Priority")
+    fig_actions = build_recommendation_priority_chart(result.recommended_actions)
+    st.pyplot(fig_actions, use_container_width=True)
+    plt.close(fig_actions)
 else:
-    st.info("Configure parameters in the sidebar and click **Run Simulation** to see results.")
-
-# Weather risk section (always visible)
-st.sidebar.header("Weather Risk")
-weather_df = load_weather_risk()
-st.sidebar.dataframe(weather_df, use_container_width=True)
-
-# Scenario comparison (optional)
-st.sidebar.header("Scenario Comparison")
-if st.sidebar.button("Run Multi-Scenario Comparison"):
-    with st.spinner("Running 3 scenarios..."):
-        scenarios = [
-            {"name": "DEL 90 min", "shock_airport": "DEL", "shock_delay_min": 90},
-            {"name": "DEL 90 + BOM 45", "shock_airport": "DEL", "shock_delay_min": 90,
-             "additional_shocks": {"BOM": 45}},
-            {"name": "Weather BLR", "shock_airport": "DEL", "shock_delay_min": 0,
-             "weather_disruption_airport": "BLR"},
-        ]
-        scenario_results = run_multi_scenario_comparison(scenarios)
-    st.subheader("Scenario Comparison Chart")
-    import pandas as pd
-    comp_df = pd.DataFrame([
-        {"Scenario": r.scenario_name, "Network Delay": r.total_network_delay,
-         "Passenger Impact": r.passenger_impact}
-        for r in scenario_results
-    ])
-    fig_sc = px.bar(comp_df, x="Scenario", y=["Network Delay", "Passenger Impact"],
-                    barmode="group", title="Scenario Comparison")
-    st.plotly_chart(fig_sc, use_container_width=True)
+    st.info("Enter flight details above and click Simulate Disruption.")

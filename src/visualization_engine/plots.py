@@ -1,4 +1,4 @@
-"""Advanced visualization plots using matplotlib, seaborn, networkx."""
+﻿"""Advanced visualization plots using matplotlib, seaborn, networkx."""
 
 from __future__ import annotations
 
@@ -18,31 +18,30 @@ def _ensure_output_dir() -> None:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def clear_figure_outputs() -> None:
+    """Delete previously generated figure files before a new run."""
+    _ensure_output_dir()
+    for pattern in ("*.png", "*.jpg", "*.jpeg", "*.svg"):
+        for fig_path in OUTPUT_DIR.glob(pattern):
+            try:
+                fig_path.unlink()
+            except OSError:
+                pass
+
+
 def plot_network_delays(G: nx.DiGraph, filename: str = "network_delays.png") -> None:
-    """Visualize the airport network with edge colours representing propagated delay."""
     _ensure_output_dir()
     pos = nx.spring_layout(G, seed=42)
-    delays = [
-        float(d.get("propagated_delay_min", d.get("predicted_delay_min", 0.0)))
-        for _, _, d in G.edges(data=True)
-    ]
+    delays = [float(d.get("propagated_delay_min", d.get("predicted_delay_min", 0.0))) for _, _, d in G.edges(data=True)]
     if not delays:
         return
     delays_arr = np.array(delays)
-    norm_delays = (delays_arr - delays_arr.min()) / max(
-        (delays_arr.max() - delays_arr.min()), 1e-6
-    )
+    norm_delays = (delays_arr - delays_arr.min()) / max((delays_arr.max() - delays_arr.min()), 1e-6)
     fig, ax = plt.subplots(figsize=(8, 6))
     nx.draw_networkx_nodes(G, pos, node_size=600, node_color="#1f78b4", ax=ax)
     nx.draw_networkx_labels(G, pos, font_size=9, font_weight="bold", ax=ax)
-    nx.draw_networkx_edges(
-        G, pos, edge_color=norm_delays, edge_cmap=plt.cm.viridis,
-        arrows=False, width=2.0, ax=ax,
-    )
-    sm = plt.cm.ScalarMappable(
-        cmap=plt.cm.viridis,
-        norm=plt.Normalize(vmin=delays_arr.min(), vmax=delays_arr.max()),
-    )
+    nx.draw_networkx_edges(G, pos, edge_color=norm_delays, edge_cmap=plt.cm.viridis, arrows=False, width=2.0, ax=ax)
+    sm = plt.cm.ScalarMappable(cmap=plt.cm.viridis, norm=plt.Normalize(vmin=delays_arr.min(), vmax=delays_arr.max()))
     sm.set_array(delays_arr)
     fig.colorbar(sm, ax=ax, label="Propagated delay (min)")
     ax.set_title("Airport Network with Propagated Delays")
@@ -51,10 +50,7 @@ def plot_network_delays(G: nx.DiGraph, filename: str = "network_delays.png") -> 
     plt.close(fig)
 
 
-def plot_delay_heatmap(
-    per_airport_delay: Dict[str, float], filename: str = "delay_heatmap.png"
-) -> None:
-    """Plot heatmap of accumulated delay per airport."""
+def plot_delay_heatmap(per_airport_delay: Dict[str, float], filename: str = "delay_heatmap.png") -> None:
     _ensure_output_dir()
     airports = list(per_airport_delay.keys())
     delays = [per_airport_delay[a] for a in airports]
@@ -68,21 +64,9 @@ def plot_delay_heatmap(
     plt.close()
 
 
-def plot_optimization_comparison(
-    total_before: float,
-    total_after: float,
-    lp_before: float,
-    lp_after: float,
-    filename: str = "optimization_comparison.png",
-) -> None:
-    """Compare pre-/post-propagation and LP objective metrics."""
+def plot_optimization_comparison(total_before: float, total_after: float, lp_before: float, lp_after: float, filename: str = "optimization_comparison.png") -> None:
     _ensure_output_dir()
-    labels = [
-        "Network Delay\nBefore",
-        "Network Delay\nAfter",
-        "LP Objective\nBefore",
-        "LP Objective\nAfter",
-    ]
+    labels = ["Network Delay\nBefore", "Network Delay\nAfter", "LP Objective\nBefore", "LP Objective\nAfter"]
     values = [total_before, total_after, lp_before, lp_after]
     plt.figure(figsize=(8, 4))
     sns.barplot(x=labels, y=values, hue=labels, palette="Blues", legend=False)
@@ -93,42 +77,25 @@ def plot_optimization_comparison(
     plt.close()
 
 
-def plot_network_delay_map(
-    G: nx.DiGraph,
-    per_airport_delay: Dict[str, float],
-    filename: str = "network_delay_map.png",
-) -> None:
-    """Network delay map with node size proportional to airport delay."""
+def plot_network_delay_map(G: nx.DiGraph, per_airport_delay: Dict[str, float], filename: str = "network_delay_map.png") -> None:
     _ensure_output_dir()
     pos = nx.spring_layout(G, seed=42)
     node_sizes = [300 + per_airport_delay.get(n, 0) * 2 for n in G.nodes()]
-    delays = [
-        float(d.get("propagated_delay_min", 0.0)) for _, _, d in G.edges(data=True)
-    ]
+    delays = [float(d.get("propagated_delay_min", 0.0)) for _, _, d in G.edges(data=True)]
     fig, ax = plt.subplots(figsize=(10, 8))
     nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color="#2e86ab", ax=ax)
     nx.draw_networkx_labels(G, pos, font_size=10, font_weight="bold", ax=ax)
     if delays:
         delays_arr = np.array(delays)
-        norm_d = (delays_arr - delays_arr.min()) / max(
-            delays_arr.max() - delays_arr.min(), 1e-6
-        )
-        nx.draw_networkx_edges(
-            G, pos, edge_color=norm_d, edge_cmap=plt.cm.YlOrRd,
-            width=2.0, ax=ax,
-        )
+        norm_d = (delays_arr - delays_arr.min()) / max(delays_arr.max() - delays_arr.min(), 1e-6)
+        nx.draw_networkx_edges(G, pos, edge_color=norm_d, edge_cmap=plt.cm.YlOrRd, width=2.0, ax=ax)
     ax.set_title("Network Delay Map")
     fig.tight_layout()
     fig.savefig(OUTPUT_DIR / filename, dpi=200)
     plt.close(fig)
 
 
-def plot_passenger_disruption(
-    per_airport_delay: Dict[str, float],
-    passenger_impact: float,
-    filename: str = "passenger_disruption.png",
-) -> None:
-    """Passenger disruption chart."""
+def plot_passenger_disruption(per_airport_delay: Dict[str, float], passenger_impact: float, filename: str = "passenger_disruption.png") -> None:
     _ensure_output_dir()
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     airports = list(per_airport_delay.keys())
@@ -144,11 +111,7 @@ def plot_passenger_disruption(
     plt.close(fig)
 
 
-def plot_airport_risk_ranking(
-    risk_ranking: List[tuple],
-    filename: str = "airport_risk_ranking.png",
-) -> None:
-    """Airport risk ranking chart."""
+def plot_airport_risk_ranking(risk_ranking: List[tuple], filename: str = "airport_risk_ranking.png") -> None:
     _ensure_output_dir()
     if not risk_ranking:
         return
@@ -164,12 +127,7 @@ def plot_airport_risk_ranking(
     plt.close()
 
 
-def plot_system_effectiveness_comparison(
-    before_metrics: Dict[str, float],
-    after_metrics: Dict[str, float],
-    filename: str = "system_effectiveness.png",
-) -> None:
-    """System effectiveness comparison chart."""
+def plot_system_effectiveness_comparison(before_metrics: Dict[str, float], after_metrics: Dict[str, float], filename: str = "system_effectiveness.png") -> None:
     _ensure_output_dir()
     labels = list(before_metrics.keys())
     before_vals = [before_metrics[k] for k in labels]
@@ -188,11 +146,7 @@ def plot_system_effectiveness_comparison(
     plt.close(fig)
 
 
-def plot_scenario_comparison(
-    scenario_results: List[object],
-    filename: str = "scenario_comparison.png",
-) -> None:
-    """Scenario comparison chart: total delay and passenger impact."""
+def plot_scenario_comparison(scenario_results: List[object], filename: str = "scenario_comparison.png") -> None:
     _ensure_output_dir()
     names = [getattr(r, "scenario_name", f"Scenario {i}") for i, r in enumerate(scenario_results)]
     delays = [getattr(r, "total_network_delay", 0) for r in scenario_results]
